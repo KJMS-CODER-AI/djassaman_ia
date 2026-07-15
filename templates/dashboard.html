@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DjassamanIA</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0B0E13; color: #E7E9EC; min-height: 100vh; font-size: 14px; }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+
+.layout { display: flex; min-height: 100vh; }
+
+/* ===== SIDEBAR ===== */
+.sidebar { width: 224px; background: #0D1117; border-right: 1px solid #1E232B; display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar-top { padding: 18px 14px; }
+.logo { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid #1E232B; margin-bottom: 10px; }
+.logo .dot { width: 34px; height: 34px; border-radius: 9px; background: #1F8B4C; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: #fff; flex-shrink: 0; }
+.logo .txt div:first-child { font-weight: 600; font-size: 13.5px; }
+.logo .txt div:last-child { font-size: 10.5px; color: #8B93A1; }
+
+.nav-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; margin-bottom: 2px; font-size: 13px; color: #9AA1AC; cursor: pointer; }
+.nav-item .left { display: flex; align-items: center; gap: 10px; }
+.nav-item.active { background: #12321F; color: #4ADE80; }
+.nav-item:hover:not(.active) { background: #141821; }
+.nav-badge { background: #1E232B; color: #8B93A1; font-size: 10.5px; padding: 1px 7px; border-radius: 10px; }
+.nav-item.active .nav-badge { background: #1F8B4C; color: #fff; }
+.nav-badge.badge-alerte { background: #C0392B; color: #fff; }
+
+.sidebar-bottom { margin-top: auto; padding: 14px; }
+.ia-card { background: #0F131A; border: 1px solid #1E232B; border-radius: 10px; padding: 12px; }
+.ia-card .titre { font-size: 12px; color: #8B93A1; margin-bottom: 6px; }
+.ia-card .statut-ligne { color: #4ADE80; font-size: 12.5px; font-weight: 600; margin-bottom: 10px; }
+.ia-card .ligne { display: flex; justify-content: space-between; font-size: 11.5px; color: #8B93A1; margin-bottom: 4px; }
+.ia-card .ligne span:last-child { color: #E7E9EC; font-weight: 600; }
+.btn-tester { width: 100%; margin-top: 10px; background: #1F8B4C; color: #fff; border: none; border-radius: 8px; padding: 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+
+/* ===== MAIN ===== */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.top-bar { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid #1E232B; flex-wrap: wrap; gap: 12px; }
+.top-bar h1 { font-size: 19px; font-weight: 600; }
+.top-bar-right { display: flex; align-items: center; gap: 10px; }
+.badge-connectee { display: flex; align-items: center; gap: 6px; background: #12321F; border: 1px solid #1F8B4C; color: #4ADE80; border-radius: 8px; padding: 7px 12px; font-size: 12px; }
+.badge-connectee .dot { width: 7px; height: 7px; border-radius: 50%; background: #4ADE80; }
+.secteur-select { background: #161B22; color: #E7E9EC; border: 1px solid #262B33; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; cursor: pointer; max-width: 220px; }
+.user-chip { display: flex; align-items: center; gap: 8px; }
+.user-chip .avatar { width: 32px; height: 32px; border-radius: 50%; background: #262B33; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+.user-chip .txt div:first-child { font-size: 12.5px; font-weight: 600; }
+.user-chip .txt div:last-child { font-size: 10.5px; color: #8B93A1; }
+
+.content { padding: 18px 22px; flex: 1; overflow: auto; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+.stat-card { background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; padding: 13px 15px; }
+.stat-card .top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.stat-card .icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+.stat-card .label { font-size: 11.5px; color: #8B93A1; }
+.stat-card .value { font-size: 21px; font-weight: 600; }
+.stat-card .delta { font-size: 10.5px; color: #4ADE80; margin-top: 3px; }
+
+.content-row { display: flex; gap: 14px; align-items: flex-start; }
+
+/* ===== CHAT ===== */
+.chat-panel { flex: 1; min-width: 0; background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; display: flex; flex-direction: column; height: 560px; }
+.chat-panel-header { padding: 12px 16px; border-bottom: 1px solid #1E232B; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chat-panel-header .left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.chat-panel-header .avatar { width: 32px; height: 32px; border-radius: 50%; background: #1F8B4C; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff; flex-shrink: 0; }
+.chat-panel-header .nom { font-size: 13.5px; font-weight: 600; }
+.chat-panel-header .statut { font-size: 11px; color: #4ADE80; }
+.btn-transferer { background: #161B22; border: 1px solid #262B33; color: #C7CCD3; border-radius: 8px; padding: 6px 12px; font-size: 11.5px; cursor: pointer; flex-shrink: 0; }
+
+.chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.bulle { max-width: 75%; padding: 9px 13px; border-radius: 12px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+.bulle.assistant { align-self: flex-start; background: #1A1F27; color: #E7E9EC; border-top-left-radius: 2px; }
+.bulle.user { align-self: flex-end; background: #1F8B4C; color: #fff; border-top-right-radius: 2px; }
+.bulle-systeme { align-self: center; background: #141821; border: 1px solid #262B33; color: #C7CCD3; font-size: 11.5px; padding: 4px 12px; border-radius: 20px; }
+.typing-bulle { align-self: flex-start; background: #1A1F27; padding: 9px 13px; border-radius: 12px; display: none; gap: 4px; align-items: center; }
+.typing-bulle.visible { display: flex; }
+.typing-bulle span { width: 6px; height: 6px; background: #8B93A1; border-radius: 50%; animation: bounce 1.2s infinite; }
+.typing-bulle span:nth-child(2) { animation-delay: 0.2s; }
+.typing-bulle span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
+
+.chat-input-bar { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #1E232B; align-items: center; }
+.chat-input-bar input { flex: 1; background: #161B22; border: 1px solid #262B33; border-radius: 20px; padding: 9px 14px; color: #E7E9EC; font-size: 13px; outline: none; }
+.chat-input-bar input:disabled { opacity: 0.5; }
+.icon-btn { width: 36px; height: 36px; border-radius: 50%; border: 1px solid #262B33; background: #161B22; color: #8B93A1; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 15px; }
+.icon-btn.recording { background: #2B1414; border-color: #5C2323; color: #F87171; animation: pulse 1s infinite; }
+.icon-btn.locating { background: #12321F; border-color: #1F8B4C; color: #4ADE80; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.send-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: #1F8B4C; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== RIGHT PANELS ===== */
+.right-col { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+.right-col-2 { width: 230px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+.panel-card { background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; padding: 14px; }
+.panel-card .title { font-size: 12px; color: #8B93A1; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+.panel-card .title .lien { color: #4ADE80; font-size: 11px; cursor: pointer; }
+
+.client-nom { font-size: 14px; font-weight: 600; }
+.client-tel { font-size: 11.5px; color: #8B93A1; margin-top: 3px; }
+.client-tag { display: inline-block; margin-top: 8px; margin-right: 5px; font-size: 11px; background: #1F2B1F; color: #4ADE80; padding: 2px 8px; border-radius: 20px; }
+.client-tag.loc { background: #1F2A3D; color: #7DA6F6; }
+.client-empty { font-size: 12px; color: #5C636E; }
+
+.hist-item { padding: 7px 0; border-bottom: 1px solid #1A1F27; }
+.hist-item:last-child { border-bottom: none; }
+.hist-item .l1 { font-size: 12.5px; font-weight: 600; display:flex; align-items:center; gap:6px; }
+.hist-item .l1 .paiement-tag { font-size: 9.5px; background:#1E232B; color:#8B93A1; padding:1px 6px; border-radius:8px; font-weight:500; }
+.hist-item .l2 { font-size: 11px; color: #8B93A1; margin-top: 2px; display: flex; justify-content: space-between; }
+.hist-vide { font-size: 12px; color: #5C636E; }
+
+.notes-area { width: 100%; background: #161B22; border: 1px solid #262B33; border-radius: 8px; padding: 8px 10px; color: #E7E9EC; font-size: 12px; font-family: inherit; resize: vertical; min-height: 70px; }
+.btn-note { margin-top: 8px; width: 100%; background: #161B22; border: 1px solid #262B33; color: #C7CCD3; border-radius: 8px; padding: 7px; font-size: 11.5px; cursor: pointer; }
+
+.panier-item { display: flex; justify-content: space-between; font-size: 12.5px; padding: 5px 0; border-bottom: 1px solid #1A1F27; }
+.panier-total { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-top: 10px; }
+.panier-vide { font-size: 12px; color: #5C636E; }
+
+.rdv-box { text-align: center; padding: 6px 0; }
+.rdv-box .libelle { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.rdv-box .date-heure { display: inline-flex; align-items: center; gap: 6px; background: #12321F; color: #4ADE80; padding: 6px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+.rdv-box .statut { margin-top: 8px; font-size: 11px; color: #8B93A1; }
+
+.assistant-avatar { width: 60px; height: 60px; border-radius: 50%; background: #12321F; border: 2px solid #1F8B4C; display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 0 auto 12px; }
+.assistant-ligne { display: flex; justify-content: space-between; font-size: 12px; color: #8B93A1; padding: 5px 0; }
+.assistant-ligne span:last-child { color: #E7E9EC; font-weight: 600; }
+.assistant-ligne .en-ligne { color: #4ADE80; }
+
+.raccourci-btn { width: 100%; text-align: left; background: #161B22; border: 1px solid #262B33; color: #C7CCD3; border-radius: 8px; padding: 9px 12px; font-size: 12px; cursor: pointer; margin-bottom: 6px; }
+.raccourci-btn:hover { background: #1A1F27; }
+.action-danger { background: #2B1414; border: 1px solid #5C2323; color: #F87171; }
+.action-neutre { background: #161B22; border: 1px solid #262B33; color: #C7CCD3; }
+
+/* ===== VUE STATISTIQUES ===== */
+.stats-view { display: none; }
+.stats-view.visible { display: block; }
+.chart-row { display: flex; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+.chart-card { flex: 1; min-width: 320px; background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; padding: 16px; }
+.chart-card .chart-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: #E7E9EC; }
+.chart-card canvas { max-height: 260px; }
+
+/* ===== VUES EN TABLEAU (Clients / Commandes / Réservations / Produits) ===== */
+.clients-view, .commandes-view, .reservations-view, .produits-view { display: none; }
+.clients-view.visible, .commandes-view.visible, .reservations-view.visible, .produits-view.visible { display: block; }
+.clients-table-wrap { background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; overflow: hidden; }
+.clients-table { width: 100%; border-collapse: collapse; }
+.clients-table th { text-align: left; font-size: 11px; color: #8B93A1; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #1E232B; background: #0D1117; }
+.clients-table td { padding: 11px 14px; font-size: 12.5px; border-bottom: 1px solid #1A1F27; vertical-align: middle; }
+.clients-table tr:last-child td { border-bottom: none; }
+.clients-table tr.anniversaire-jour { background: #12321F; }
+.clients-table tr.ligne-non-vue { background: #17140D; }
+.clients-table tr.ligne-indisponible { opacity: 0.5; }
+.client-row-nom { font-weight: 600; }
+.client-row-vide { text-align: center; padding: 40px 20px; color: #5C636E; font-size: 13px; }
+.tag-anniversaire { display: inline-flex; align-items: center; gap: 4px; background: #1F8B4C; color: #fff; padding: 2px 9px; border-radius: 20px; font-size: 10.5px; font-weight: 600; margin-left: 6px; }
+.tag-nouveau { display: inline-flex; align-items: center; gap: 4px; background: #C0392B; color: #fff; padding: 2px 9px; border-radius: 20px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+
+.items-liste { font-size: 11.5px; color: #C7CCD3; }
+.items-liste div { margin-bottom: 2px; }
+
+.statut-select { background: #161B22; border: 1px solid #262B33; color: #E7E9EC; border-radius: 6px; padding: 5px 8px; font-size: 11.5px; cursor: pointer; }
+.statut-select.st-nouvelle { border-color: #C0392B; color: #F87171; }
+.statut-select.st-en_preparation { border-color: #F6AD55; color: #F6AD55; }
+.statut-select.st-en_livraison { border-color: #7DA6F6; color: #7DA6F6; }
+.statut-select.st-livree { border-color: #1F8B4C; color: #4ADE80; }
+.statut-select.st-confirme { border-color: #1F8B4C; color: #4ADE80; }
+.statut-select.st-annulee { border-color: #5C636E; color: #8B93A1; }
+
+.btn-livreur { background: #12321F; border: 1px solid #1F8B4C; color: #4ADE80; border-radius: 7px; padding: 6px 11px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.btn-livreur:hover { background: #1F8B4C; color: #fff; }
+.btn-livreur:disabled { opacity: 0.4; cursor: not-allowed; }
+.lien-maps { color: #7DA6F6; font-size: 11px; }
+
+.section-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.btn-tout-vu { background: #161B22; border: 1px solid #262B33; color: #C7CCD3; border-radius: 8px; padding: 7px 12px; font-size: 11.5px; cursor: pointer; }
+.btn-tout-vu:hover { background: #1A1F27; }
+
+/* ===== PRODUITS / MENU ===== */
+.produits-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
+.produits-info { font-size: 12px; color: #8B93A1; }
+.form-ajout-produit { background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; padding: 16px; margin-bottom: 14px; display: none; }
+.form-ajout-produit.visible { display: block; }
+.form-ajout-produit .grille { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr 0.7fr; gap: 10px; margin-bottom: 10px; }
+.form-ajout-produit input, .form-ajout-produit select, .form-ajout-produit textarea {
+  width: 100%; background: #161B22; border: 1px solid #262B33; border-radius: 8px; padding: 9px 11px;
+  color: #E7E9EC; font-size: 12.5px; font-family: inherit; outline: none;
+}
+.form-ajout-produit textarea { resize: vertical; min-height: 44px; margin-bottom: 10px; }
+.form-ajout-produit .actions { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-primaire { background: #1F8B4C; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.btn-secondaire { background: #161B22; border: 1px solid #262B33; color: #C7CCD3; border-radius: 8px; padding: 9px 16px; font-size: 12.5px; cursor: pointer; }
+
+.champ-inline { background: transparent; border: 1px solid transparent; color: #E7E9EC; font-size: 12.5px; font-family: inherit; padding: 3px 5px; border-radius: 5px; width: 100%; }
+.champ-inline:hover { border-color: #262B33; }
+.champ-inline:focus { border-color: #1F8B4C; outline: none; background: #161B22; }
+.champ-prix { width: 90px; }
+
+.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #262B33; border-radius: 20px; transition: 0.2s; }
+.toggle-slider::before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #8B93A1; border-radius: 50%; transition: 0.2s; }
+.toggle-switch input:checked + .toggle-slider { background: #1F8B4C; }
+.toggle-switch input:checked + .toggle-slider::before { background: #fff; transform: translateX(16px); }
+
+.btn-icone { background: none; border: none; color: #8B93A1; cursor: pointer; font-size: 14px; padding: 4px 6px; border-radius: 6px; }
+.btn-icone:hover { background: #1A1F27; color: #F87171; }
+.categorie-tag { font-size: 10.5px; background: #1E232B; color: #8B93A1; padding: 2px 8px; border-radius: 8px; }
+.vue-secteur-info { background: #0F131A; border: 1px solid #1E232B; border-radius: 12px; padding: 30px; text-align: center; color: #8B93A1; font-size: 13px; }
+
+/* ===== TOASTS DE NOTIFICATION ===== */
+.toast-container { position: fixed; top: 18px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 999; }
+.toast { background: #0F131A; border: 1px solid #1F8B4C; border-left: 4px solid #1F8B4C; border-radius: 10px; padding: 12px 16px; min-width: 260px; max-width: 340px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); animation: toast-in 0.25s ease-out; }
+.toast .toast-titre { font-size: 12.5px; font-weight: 700; color: #4ADE80; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+.toast .toast-corps { font-size: 12px; color: #C7CCD3; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+.toast.sortant { animation: toast-out 0.25s ease-in forwards; }
+@keyframes toast-out { to { opacity: 0; transform: translateX(30px); } }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: #262B33; border-radius: 3px; }
+
+@media (max-width: 1100px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .content-row { flex-direction: column; }
+  .right-col, .right-col-2 { width: 100%; }
+  .form-ajout-produit .grille { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="toast-container" id="toast-container"></div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-top">
+      <div class="logo">
+        <div class="dot">D</div>
+        <div class="txt"><div>DjassamanIA</div><div>Employé IA WhatsApp</div></div>
+      </div>
+      <div class="nav-item active" id="nav-tableau-de-bord" onclick="afficherTableauDeBord()"><span class="left">📊 Tableau de bord</span></div>
+      <div class="nav-item"><span class="left">💬 Conversations</span><span class="nav-badge" id="nav-conv-badge">-</span></div>
+      <div class="nav-item" id="nav-clients" onclick="afficherClients()"><span class="left">👥 Clients</span></div>
+      <div class="nav-item" id="nav-commandes" onclick="afficherCommandes()"><span class="left">📦 Commandes</span><span class="nav-badge" id="nav-cmd-badge">-</span></div>
+      <div class="nav-item" id="nav-produits" onclick="afficherProduits()"><span class="left">🗂️ Produits / Menu</span></div>
+      <div class="nav-item" id="nav-reservations" onclick="afficherReservations()"><span class="left">📅 Réservations</span><span class="nav-badge" id="nav-rdv-badge">-</span></div>
+      <div class="nav-item"><span class="left">📣 Campagnes</span></div>
+      <div class="nav-item" id="nav-statistiques" onclick="afficherStatistiques()"><span class="left">📈 Statistiques</span></div>
+      <div class="nav-item"><span class="left">⚙️ Paramètres</span></div>
+      <div class="nav-item"><span class="left">🔌 Intégrations</span></div>
+      <div class="nav-item"><span class="left">🧑‍💼 Employés</span></div>
+      <div class="nav-item"><span class="left">💳 Facturation</span></div>
+    </div>
+    <div class="sidebar-bottom">
+      <div class="ia-card">
+        <div class="titre">IA Actuellement</div>
+        <div class="statut-ligne">● En ligne</div>
+        <div class="ligne"><span>Conversations actives</span><span id="ia-conv-actives">-</span></div>
+        <div class="ligne"><span>Réponses aujourd'hui</span><span id="ia-reponses">-</span></div>
+        <button class="btn-tester" onclick="afficherTableauDeBord(); document.getElementById('message-input').focus()">Tester votre IA</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="top-bar">
+      <h1 id="page-title">Tableau de bord</h1>
+      <div class="top-bar-right">
+        <div class="badge-connectee"><span class="dot"></span> IA Connectée</div>
+        <select class="secteur-select" id="secteur-select"></select>
+        <div class="user-chip"><div class="avatar">DJ</div><div class="txt"><div>Vous</div><div>Propriétaire</div></div></div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="top"><div class="icon" style="background:#12321F;color:#4ADE80;">💬</div><div class="label">Conversations</div></div>
+          <div class="value" id="stat-conversations">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="top"><div class="icon" style="background:#2A1F3D;color:#B794F6;">📦</div><div class="label">Commandes</div></div>
+          <div class="value" id="stat-commandes">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="top"><div class="icon" style="background:#3D2E1F;color:#F6AD55;">💰</div><div class="label">Chiffre d'affaires</div></div>
+          <div class="value" id="stat-ca">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="top"><div class="icon" style="background:#3D1F1F;color:#F87171;">📅</div><div class="label">Rendez-vous</div></div>
+          <div class="value" id="stat-rdv">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="top"><div class="icon" style="background:#1F3D2E;color:#4ADE80;">⭐</div><div class="label" id="stat-panier-label">Panier en cours</div></div>
+          <div class="value" id="stat-panier">0</div>
+        </div>
+      </div>
+
+      <!-- ===== VUE TABLEAU DE BORD (chat + panneaux) ===== -->
+      <div class="content-row" id="vue-tableau-de-bord">
+        <div class="chat-panel">
+          <div class="chat-panel-header">
+            <div class="left">
+              <div class="avatar" id="avatar-initiale">?</div>
+              <div>
+                <div class="nom" id="entreprise-nom">Choisissez un secteur</div>
+                <div class="statut">en ligne · WhatsApp (simulé)</div>
+              </div>
+            </div>
+            <button class="btn-transferer">Transférer à un humain</button>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <div class="typing-bulle" id="typing-bulle"><span></span><span></span><span></span></div>
+          </div>
+          <div class="chat-input-bar">
+            <button class="icon-btn" id="mic-btn" title="Note vocale (bientôt)">🎤</button>
+            <button class="icon-btn" id="loc-btn" title="Partager ma position">📍</button>
+            <input type="text" id="message-input" placeholder="Écrire comme un client…" disabled>
+            <button class="send-btn" id="send-btn" disabled>➤</button>
+          </div>
+        </div>
+
+        <div class="right-col">
+          <div class="panel-card">
+            <div class="title">Informations client</div>
+            <div id="client-info"><div class="client-empty">Aucune information collectée</div></div>
+          </div>
+
+          <div class="panel-card">
+            <div class="title">Historique</div>
+            <div id="historique-contenu"><div class="hist-vide">Aucun historique</div></div>
+          </div>
+
+          <div class="panel-card">
+            <div class="title">Notes</div>
+            <textarea class="notes-area" id="notes-area" placeholder="Ajouter une note sur ce client…"></textarea>
+            <button class="btn-note" id="notes-save">Enregistrer la note</button>
+          </div>
+
+          <div class="panel-card">
+            <div class="title" id="panel-action-titre">Commande en cours</div>
+            <div id="panel-action-contenu"><div class="panier-vide">Panier vide</div></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ===== VUE STATISTIQUES (courbes) ===== -->
+      <div class="stats-view" id="vue-statistiques">
+        <div class="chart-row">
+          <div class="chart-card">
+            <div class="chart-title">Conversations &amp; commandes — 7 derniers jours</div>
+            <canvas id="chart-evolution"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Chiffre d'affaires par jour (FCFA)</div>
+            <canvas id="chart-ca"></canvas>
+          </div>
+        </div>
+        <div class="chart-row">
+          <div class="chart-card" style="flex:2;">
+            <div class="chart-title">Produits / services les plus demandés</div>
+            <canvas id="chart-top-produits"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== VUE CLIENTS ===== -->
+      <div class="clients-view" id="vue-clients">
+        <div class="clients-table-wrap">
+          <table class="clients-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Téléphone</th>
+                <th>Anniversaire</th>
+                <th>Commandes</th>
+                <th>Rendez-vous</th>
+                <th>Total dépensé</th>
+                <th>Client depuis</th>
+              </tr>
+            </thead>
+            <tbody id="clients-tbody">
+              <tr><td colspan="7" class="client-row-vide">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ===== VUE COMMANDES ===== -->
+      <div class="commandes-view" id="vue-commandes">
+        <div class="section-toolbar">
+          <button class="btn-tout-vu" onclick="toutMarquerVu('commandes')">Tout marquer comme vu</button>
+        </div>
+        <div class="clients-table-wrap">
+          <table class="clients-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Client</th>
+                <th>Articles</th>
+                <th>Total</th>
+                <th>Paiement</th>
+                <th>Position</th>
+                <th>Statut</th>
+                <th>Livreur</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="commandes-tbody">
+              <tr><td colspan="9" class="client-row-vide">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ===== VUE RÉSERVATIONS ===== -->
+      <div class="reservations-view" id="vue-reservations">
+        <div class="section-toolbar">
+          <button class="btn-tout-vu" onclick="toutMarquerVu('rendez_vous')">Tout marquer comme vu</button>
+        </div>
+        <div class="clients-table-wrap">
+          <table class="clients-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Client</th>
+                <th>Téléphone</th>
+                <th>Service</th>
+                <th>Jour</th>
+                <th>Heure</th>
+                <th>Statut</th>
+                <th>Réservé le</th>
+              </tr>
+            </thead>
+            <tbody id="reservations-tbody">
+              <tr><td colspan="8" class="client-row-vide">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ===== VUE PRODUITS / MENU ===== -->
+      <div class="produits-view" id="vue-produits">
+        <div id="produits-zone-commande">
+          <div class="produits-toolbar">
+            <div class="produits-info" id="produits-compteur">Chargement…</div>
+            <button class="btn-primaire" onclick="basculerFormAjoutProduit()">+ Ajouter un produit</button>
+          </div>
+
+          <div class="form-ajout-produit" id="form-ajout-produit">
+            <div class="grille">
+              <input type="text" id="nouveau-produit-nom" placeholder="Nom du produit (ex: Poulet braisé)">
+              <input type="text" id="nouveau-produit-categorie" placeholder="Catégorie (ex: Plats)">
+              <input type="number" id="nouveau-produit-prix" placeholder="Prix" min="0">
+              <select id="nouveau-produit-devise">
+                <option value="FCFA">FCFA</option>
+                <option value="XOF">XOF</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <textarea id="nouveau-produit-description" placeholder="Description courte (optionnel)"></textarea>
+            <div class="actions">
+              <button class="btn-secondaire" onclick="basculerFormAjoutProduit()">Annuler</button>
+              <button class="btn-primaire" onclick="ajouterProduit()">Ajouter</button>
+            </div>
+          </div>
+
+          <div class="clients-table-wrap">
+            <table class="clients-table">
+              <thead>
+                <tr>
+                  <th>Catégorie</th>
+                  <th>Nom</th>
+                  <th>Description</th>
+                  <th>Prix</th>
+                  <th>Disponible</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="produits-tbody">
+                <tr><td colspan="6" class="client-row-vide">Chargement…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="vue-secteur-info" id="produits-zone-autre" style="display:none;">
+          Cette section gère le catalogue des entreprises qui prennent des commandes.<br>
+          Pour ce secteur (rendez-vous), la gestion des créneaux sera ajoutée dans une prochaine étape.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+
+let entrepriseActuelle = null;
+let sessionId = sessionStorage.getItem('djassaman_session_id');
+let chartEvolution = null;
+let chartCA = null;
+let chartTopProduits = null;
+
+const chatMessages = document.getElementById('chat-messages');
+const typingBulle = document.getElementById('typing-bulle');
+const messageInput = document.getElementById('message-input');
+const sendBtn = document.getElementById('send-btn');
+const micBtn = document.getElementById('mic-btn');
+const locBtn = document.getElementById('loc-btn');
+const secteurSelect = document.getElementById('secteur-select');
+const entrepriseNom = document.getElementById('entreprise-nom');
+const avatarInitiale = document.getElementById('avatar-initiale');
+const clientInfo = document.getElementById('client-info');
+const historiqueContenu = document.getElementById('historique-contenu');
+const panelActionTitre = document.getElementById('panel-action-titre');
+const panelActionContenu = document.getElementById('panel-action-contenu');
+const statPanier = document.getElementById('stat-panier');
+const statPanierLabel = document.getElementById('stat-panier-label');
+const notesArea = document.getElementById('notes-area');
+const notesSave = document.getElementById('notes-save');
+const toastContainer = document.getElementById('toast-container');
+
+const LABELS_STATUT_COMMANDE = {
+  nouvelle: 'Nouvelle', en_preparation: 'En préparation',
+  en_livraison: 'En livraison', livree: 'Livrée', annulee: 'Annulée',
+};
+
+async function initialiser() {
+  if (!sessionId) {
+    const r = await fetch('/api/nouvelle-session');
+    const data = await r.json();
+    sessionId = data.session_id;
+    sessionStorage.setItem('djassaman_session_id', sessionId);
+  }
+
+  const res = await fetch('/api/entreprises');
+  const entreprises = await res.json();
+
+  entreprises.forEach((e) => {
+    const opt = document.createElement('option');
+    opt.value = e.id;
+    opt.textContent = e.secteur + ' — ' + e.nom;
+    secteurSelect.appendChild(opt);
+  });
+
+  secteurSelect.addEventListener('change', () => {
+    const e = entreprises.find(x => x.id === secteurSelect.value);
+    if (e) choisirSecteur(e);
+  });
+
+  if (entreprises.length > 0) choisirSecteur(entreprises[0]);
+}
+
+function choisirSecteur(entreprise) {
+  entrepriseActuelle = entreprise;
+  secteurSelect.value = entreprise.id;
+
+  entrepriseNom.textContent = entreprise.nom;
+  avatarInitiale.textContent = entreprise.nom.charAt(0).toUpperCase();
+  avatarInitiale.style.background = entreprise.couleur_primaire || '#1F8B4C';
+
+  chatMessages.innerHTML = '';
+  chatMessages.appendChild(typingBulle);
+
+  messageInput.disabled = false;
+  sendBtn.disabled = false;
+  messageInput.focus();
+
+  mettreAJourLibellesSelonSecteur(entreprise.type_activite);
+
+  chargerStats(entreprise.id);
+  chargerHistorique(entreprise.id);
+  chargerNote(entreprise.id);
+  chargerNotifications(entreprise.id);
+  socket.emit('demarrer_conversation', { entreprise_id: entreprise.id, session_id: sessionId });
+
+  // Rejoint la room admin pour recevoir les notifications temps reel (nouvelles commandes / RDV)
+  socket.emit('rejoindre_admin', { entreprise_id: entreprise.id });
+
+  if (document.getElementById('vue-statistiques').classList.contains('visible')) {
+    chargerGraphiques(entreprise.id);
+  }
+  if (document.getElementById('vue-commandes').classList.contains('visible')) {
+    chargerCommandes(entreprise.id);
+  }
+  if (document.getElementById('vue-reservations').classList.contains('visible')) {
+    chargerReservations(entreprise.id);
+  }
+  if (document.getElementById('vue-produits').classList.contains('visible')) {
+    afficherProduits();
+  }
+}
+
+function mettreAJourLibellesSelonSecteur(typeActivite) {
+  if (typeActivite === 'rendez_vous') {
+    panelActionTitre.textContent = 'Prochain rendez-vous';
+    statPanierLabel.textContent = 'Prochain RDV';
+  } else if (typeActivite === 'commande') {
+    panelActionTitre.textContent = 'Commande en cours';
+    statPanierLabel.textContent = 'Panier en cours';
+  } else {
+    panelActionTitre.textContent = 'Suivi du contact';
+    statPanierLabel.textContent = 'Actions en cours';
+  }
+}
+
+async function chargerStats(entrepriseId) {
+  const res = await fetch('/api/stats/' + entrepriseId);
+  const stats = await res.json();
+  document.getElementById('stat-conversations').textContent = stats.conversations;
+  document.getElementById('stat-commandes').textContent = stats.commandes;
+  document.getElementById('stat-ca').textContent = stats.chiffre_affaires > 0
+    ? Math.round(stats.chiffre_affaires).toLocaleString() + ' F' : 'N/A';
+  document.getElementById('stat-rdv').textContent = stats.rendez_vous;
+  document.getElementById('nav-conv-badge').textContent = stats.conversations;
+  document.getElementById('ia-conv-actives').textContent = stats.conversations;
+  document.getElementById('ia-reponses').textContent = stats.commandes + stats.rendez_vous;
+}
+
+/* ===== NOTIFICATIONS (badges + toasts) ===== */
+
+async function chargerNotifications(entrepriseId) {
+  const res = await fetch('/api/notifications/' + entrepriseId);
+  const data = await res.json();
+  majBadge('nav-cmd-badge', data.commandes_non_vues);
+  majBadge('nav-rdv-badge', data.rdv_non_vus);
+}
+
+function majBadge(id, valeur) {
+  const el = document.getElementById(id);
+  el.textContent = valeur;
+  if (valeur > 0) el.classList.add('badge-alerte');
+  else el.classList.remove('badge-alerte');
+}
+
+async function toutMarquerVu(type) {
+  if (!entrepriseActuelle) return;
+  await fetch('/api/notifications/' + entrepriseActuelle.id + '/tout-marquer-vu', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type }),
+  });
+  chargerNotifications(entrepriseActuelle.id);
+  if (type === 'commandes') chargerCommandes(entrepriseActuelle.id);
+  else chargerReservations(entrepriseActuelle.id);
+}
+
+function afficherToast(titre, corps) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = '<div class="toast-titre">🔔 ' + titre + '</div><div class="toast-corps">' + corps + '</div>';
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('sortant');
+    setTimeout(() => toast.remove(), 250);
+  }, 5000);
+}
+
+/* ===== HISTORIQUE (adapte au secteur : commandes OU rendez-vous) ===== */
+
+async function chargerHistorique(entrepriseId) {
+  const res = await fetch('/api/historique/' + entrepriseId + '/' + sessionId);
+  const data = await res.json();
+  const items = (data && data.items) ? data.items : [];
+
+  if (!items || items.length === 0) {
+    historiqueContenu.innerHTML = '<div class="hist-vide">' +
+      (data && data.type === 'rendez_vous' ? 'Aucun rendez-vous passé' : 'Aucune commande passée') +
+      '</div>';
+    return;
+  }
+
+  let html = '';
+  if (data.type === 'rendez_vous') {
+    items.forEach(r => {
+      const date = new Date(r.date_creation).toLocaleDateString('fr-FR');
+      const statutTxt = r.statut === 'confirme' ? 'Confirmé' : r.statut;
+      html += '<div class="hist-item"><div class="l1">' + r.libelle + ' <span class="paiement-tag">' + statutTxt + '</span></div>' +
+        '<div class="l2"><span>' + r.jour + ' — ' + r.heure + '</span><span>' + date + '</span></div></div>';
+    });
+  } else {
+    items.forEach(h => {
+      const date = new Date(h.date_creation).toLocaleDateString('fr-FR');
+      const tagPaiement = h.moyen_paiement ? '<span class="paiement-tag">' + h.moyen_paiement + '</span>' : '';
+      html += '<div class="hist-item"><div class="l1">Commande #' + h.id + ' ' + tagPaiement + '</div>' +
+        '<div class="l2"><span>' + h.nb_articles + ' article(s)</span><span>' + date + '</span></div></div>';
+    });
+  }
+  historiqueContenu.innerHTML = html;
+}
+
+async function chargerNote(entrepriseId) {
+  const res = await fetch('/api/note/' + entrepriseId + '/' + sessionId);
+  const data = await res.json();
+  notesArea.value = data.contenu || '';
+}
+
+notesSave.addEventListener('click', async () => {
+  if (!entrepriseActuelle) return;
+  await fetch('/api/note/' + entrepriseActuelle.id + '/' + sessionId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contenu: notesArea.value }),
+  });
+  notesSave.textContent = 'Enregistré ✓';
+  setTimeout(() => notesSave.textContent = 'Enregistrer la note', 1500);
+});
+
+micBtn.addEventListener('click', () => {
+  ajouterBulleSysteme('🎤 Notes vocales : bientôt disponible (étape 2)');
+});
+
+locBtn.addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    ajouterBulleSysteme("⚠️ La géolocalisation n'est pas disponible sur ce navigateur.");
+    return;
+  }
+  locBtn.classList.add('locating');
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      locBtn.classList.remove('locating');
+      const lat = position.coords.latitude.toFixed(5);
+      const lng = position.coords.longitude.toFixed(5);
+      const texte = 'Localisation partagée : latitude ' + lat + ', longitude ' + lng;
+      ajouterBulle(texte, 'user');
+      socket.emit('envoyer_message', { entreprise_id: entrepriseActuelle.id, session_id: sessionId, message: texte });
+    },
+    () => {
+      locBtn.classList.remove('locating');
+      ajouterBulleSysteme('⚠️ Impossible de récupérer votre position (autorisation refusée ou indisponible).');
+    }
+  );
+});
+
+function ajouterBulle(texte, role) {
+  const bulle = document.createElement('div');
+  bulle.className = 'bulle ' + role;
+  bulle.textContent = texte;
+  chatMessages.insertBefore(bulle, typingBulle);
+  scrollEnBas();
+}
+
+function ajouterBulleSysteme(texte) {
+  const bulle = document.createElement('div');
+  bulle.className = 'bulle-systeme';
+  bulle.textContent = texte;
+  chatMessages.insertBefore(bulle, typingBulle);
+  scrollEnBas();
+}
+
+function scrollEnBas() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+
+function afficherClient(client) {
+  if (!client || (!client.prenom && !client.telephone && !client.latitude)) {
+    clientInfo.innerHTML = '<div class="client-empty">Aucune information collectée</div>';
+    return;
+  }
+  let tags = '';
+  if (client.date_anniversaire) tags += '<span class="client-tag">🎂 ' + client.date_anniversaire + '</span>';
+  else tags += '<span class="client-tag">Nouveau contact</span>';
+  if (client.latitude && client.longitude) tags += '<span class="client-tag loc">📍 Position partagée</span>';
+
+  clientInfo.innerHTML =
+    '<div class="client-nom">' + (client.prenom || 'Client') + '</div>' +
+    (client.telephone ? '<div class="client-tel">' + client.telephone + '</div>' : '') +
+    tags;
+}
+
+function afficherRdv(rdv) {
+  if (!rdv || !rdv.id) {
+    panelActionContenu.innerHTML = '<div class="panier-vide">Aucun rendez-vous en attente</div>';
+    statPanier.textContent = '0';
+    return;
+  }
+  panelActionContenu.innerHTML =
+    '<div class="rdv-box">' +
+      '<div class="libelle">' + rdv.libelle + '</div>' +
+      '<div class="date-heure">📅 ' + rdv.jour + ' — ' + rdv.heure + '</div>' +
+      '<div class="statut">Statut : ' + (rdv.statut === 'confirme' ? 'Confirmé ✓' : rdv.statut) + '</div>' +
+    '</div>';
+  statPanier.textContent = rdv.jour + ' ' + rdv.heure;
+}
+
+function afficherPanier(panier, total) {
+  if (!entrepriseActuelle || entrepriseActuelle.type_activite !== 'commande') return;
+
+  if (!panier || panier.length === 0) {
+    panelActionContenu.innerHTML = '<div class="panier-vide">Panier vide</div>';
+    statPanier.textContent = '0';
+    return;
+  }
+  let html = '';
+  panier.forEach(item => {
+    html += '<div class="panier-item"><span>' + item.quantite + 'x ' + item.nom + '</span><span style="color:#8B93A1;">' + Math.round(item.prix * item.quantite).toLocaleString() + '</span></div>';
+  });
+  html += '<div class="panier-total"><span>Total</span><span>' + Math.round(total).toLocaleString() + ' F</span></div>';
+  panelActionContenu.innerHTML = html;
+  statPanier.textContent = Math.round(total).toLocaleString();
+}
+
+function envoyerMessage() {
+  const texte = messageInput.value.trim();
+  if (!texte || !entrepriseActuelle) return;
+  ajouterBulle(texte, 'user');
+  messageInput.value = '';
+  socket.emit('envoyer_message', { entreprise_id: entrepriseActuelle.id, session_id: sessionId, message: texte });
+}
+
+sendBtn.addEventListener('click', envoyerMessage);
+messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') envoyerMessage(); });
+
+socket.on('conversation_initialisee', (data) => {
+  chatMessages.innerHTML = '';
+  chatMessages.appendChild(typingBulle);
+  if (data.historique && data.historique.length > 0) {
+    data.historique.forEach(m => ajouterBulle(m.contenu, m.role === 'user' ? 'user' : 'assistant'));
+  } else if (data.message_accueil) {
+    ajouterBulle(data.message_accueil, 'assistant');
+  }
+  afficherClient(data.client);
+
+  if (data.type_activite === 'rendez_vous') {
+    afficherRdv(data.dernier_rdv);
+  } else if (data.type_activite === 'commande') {
+    afficherPanier(data.panier, data.total);
+  } else {
+    panelActionContenu.innerHTML = '<div class="panier-vide">Aucune action en cours</div>';
+  }
+});
+
+socket.on('en_train_decrire', () => { typingBulle.classList.add('visible'); scrollEnBas(); });
+
+socket.on('nouvelle_reponse', (data) => {
+  typingBulle.classList.remove('visible');
+  ajouterBulle(data.reponse, 'assistant');
+  (data.evenements || []).forEach(ev => {
+    if (ev.type === 'commande_creee') {
+      const paiement = ev.details.moyen_paiement ? ' via ' + ev.details.moyen_paiement : '';
+      ajouterBulleSysteme('✅ Commande enregistrée' + paiement + ' — Total : ' + Math.round(ev.details.total) + ' FCFA');
+      if (entrepriseActuelle) { chargerStats(entrepriseActuelle.id); chargerHistorique(entrepriseActuelle.id); }
+    } else if (ev.type === 'rdv_cree') {
+      ajouterBulleSysteme('📅 Rendez-vous confirmé — ' + ev.details.libelle + ', ' + ev.details.jour + ' à ' + ev.details.heure);
+      if (entrepriseActuelle) { chargerStats(entrepriseActuelle.id); chargerHistorique(entrepriseActuelle.id); }
+    } else if (ev.type === 'localisation_enregistree') {
+      ajouterBulleSysteme('📍 Position du client enregistrée');
+    }
+  });
+});
+
+socket.on('panier_maj', (data) => afficherPanier(data.panier, data.total));
+socket.on('rdv_maj', (data) => {
+  afficherRdv(data.rdv);
+  if (entrepriseActuelle) chargerHistorique(entrepriseActuelle.id);
+});
+socket.on('client_maj', (data) => afficherClient(data.client));
+
+socket.on('erreur', (data) => {
+  typingBulle.classList.remove('visible');
+  ajouterBulleSysteme('⚠️ ' + data.message);
+});
+
+/* ===== NOTIFICATIONS TEMPS REEL (dashboard admin) ===== */
+
+socket.on('nouvelle_commande', (data) => {
+  const c = data.commande;
+  const nomClient = c.prenom || 'Un client';
+  afficherToast('Nouvelle commande #' + c.id, nomClient + ' — ' + Math.round(c.total).toLocaleString() + ' FCFA');
+  if (entrepriseActuelle) {
+    chargerNotifications(entrepriseActuelle.id);
+    chargerStats(entrepriseActuelle.id);
+    if (document.getElementById('vue-commandes').classList.contains('visible')) {
+      chargerCommandes(entrepriseActuelle.id);
+    }
+  }
+});
+
+socket.on('nouveau_rdv', (data) => {
+  const rdv = data.rdv;
+  if (!rdv) return;
+  const nomClient = rdv.prenom || 'Un client';
+  afficherToast('Nouveau rendez-vous', nomClient + ' — ' + rdv.libelle + ', ' + rdv.jour + ' à ' + rdv.heure);
+  if (entrepriseActuelle) {
+    chargerNotifications(entrepriseActuelle.id);
+    chargerStats(entrepriseActuelle.id);
+    if (document.getElementById('vue-reservations').classList.contains('visible')) {
+      chargerReservations(entrepriseActuelle.id);
+    }
+  }
+});
+
+socket.on('commande_statut_maj', (data) => {
+  const select = document.querySelector('.statut-select[data-commande-id="' + data.commande_id + '"]');
+  if (select) {
+    select.value = data.statut;
+    select.className = 'statut-select st-' + data.statut;
+  }
+});
+
+/* ===== NAVIGATION ENTRE VUES ===== */
+
+function masquerToutesLesVues() {
+  document.getElementById('vue-tableau-de-bord').style.display = 'none';
+  document.getElementById('vue-statistiques').classList.remove('visible');
+  document.getElementById('vue-clients').classList.remove('visible');
+  document.getElementById('vue-commandes').classList.remove('visible');
+  document.getElementById('vue-reservations').classList.remove('visible');
+  document.getElementById('vue-produits').classList.remove('visible');
+  document.getElementById('nav-tableau-de-bord').classList.remove('active');
+  document.getElementById('nav-statistiques').classList.remove('active');
+  document.getElementById('nav-clients').classList.remove('active');
+  document.getElementById('nav-commandes').classList.remove('active');
+  document.getElementById('nav-reservations').classList.remove('active');
+  document.getElementById('nav-produits').classList.remove('active');
+}
+
+function afficherTableauDeBord() {
+  masquerToutesLesVues();
+  document.getElementById('page-title').textContent = 'Tableau de bord';
+  document.getElementById('vue-tableau-de-bord').style.display = 'flex';
+  document.getElementById('nav-tableau-de-bord').classList.add('active');
+}
+
+function afficherStatistiques() {
+  masquerToutesLesVues();
+  document.getElementById('page-title').textContent = 'Statistiques';
+  document.getElementById('vue-statistiques').classList.add('visible');
+  document.getElementById('nav-statistiques').classList.add('active');
+  if (entrepriseActuelle) chargerGraphiques(entrepriseActuelle.id);
+}
+
+function afficherClients() {
+  masquerToutesLesVues();
+  document.getElementById('page-title').textContent = 'Clients';
+  document.getElementById('vue-clients').classList.add('visible');
+  document.getElementById('nav-clients').classList.add('active');
+  if (entrepriseActuelle) chargerClients(entrepriseActuelle.id);
+}
+
+function afficherCommandes() {
+  masquerToutesLesVues();
+  document.getElementById('page-title').textContent = 'Commandes';
+  document.getElementById('vue-commandes').classList.add('visible');
+  document.getElementById('nav-commandes').classList.add('active');
+  if (entrepriseActuelle) chargerCommandes(entrepriseActuelle.id);
+}
+
+function afficherReservations() {
+  masquerToutesLesVues();
+  document.getElementById('page-title').textContent = 'Réservations';
+  document.getElementById('vue-reservations').classList.add('visible');
+  document.getElementById('nav-reservations').classList.add('active');
+  if (entrepriseActuelle) chargerReservations(entrepriseActuelle.id);
+}
+
+function afficherProduits() {
+  masquerToutesLesVues();
+  document.getElementById('page-title').textContent = 'Produits / Menu';
+  document.getElementById('vue-produits').classList.add('visible');
+  document.getElementById('nav-produits').classList.add('active');
+
+  const zoneCommande = document.getElementById('produits-zone-commande');
+  const zoneAutre = document.getElementById('produits-zone-autre');
+
+  if (!entrepriseActuelle) return;
+
+  if (entrepriseActuelle.type_activite === 'commande') {
+    zoneCommande.style.display = 'block';
+    zoneAutre.style.display = 'none';
+    chargerProduits(entrepriseActuelle.id);
+  } else {
+    zoneCommande.style.display = 'none';
+    zoneAutre.style.display = 'block';
+  }
+}
+
+async function chargerClients(entrepriseId) {
+  const tbody = document.getElementById('clients-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="client-row-vide">Chargement…</td></tr>';
+
+  const res = await fetch('/api/clients/' + entrepriseId);
+  const clients = await res.json();
+
+  if (!clients || clients.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="client-row-vide">Aucun client pour le moment</td></tr>';
+    return;
+  }
+
+  let html = '';
+  clients.forEach(c => {
+    const nom = c.prenom || 'Client anonyme';
+    const tel = c.telephone || '—';
+    const anniv = c.date_anniversaire
+      ? c.date_anniversaire + (c.anniversaire_aujourdhui ? '<span class="tag-anniversaire">🎂 Aujourd hui !</span>' : '')
+      : '—';
+    const depuis = new Date(c.date_creation).toLocaleDateString('fr-FR');
+    const ligneClasse = c.anniversaire_aujourdhui ? ' class="anniversaire-jour"' : '';
+
+    html += '<tr' + ligneClasse + '>' +
+      '<td class="client-row-nom">' + nom + '</td>' +
+      '<td>' + tel + '</td>' +
+      '<td>' + anniv + '</td>' +
+      '<td>' + c.nb_commandes + '</td>' +
+      '<td>' + c.nb_rdv + '</td>' +
+      '<td>' + Math.round(c.total_depense).toLocaleString() + ' F</td>' +
+      '<td>' + depuis + '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* ===== COMMANDES ===== */
+
+async function chargerCommandes(entrepriseId) {
+  const tbody = document.getElementById('commandes-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" class="client-row-vide">Chargement…</td></tr>';
+
+  const res = await fetch('/api/commandes/' + entrepriseId);
+  const commandes = await res.json();
+
+  if (!commandes || commandes.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="client-row-vide">Aucune commande pour le moment</td></tr>';
+    return;
+  }
+
+  let html = '';
+  commandes.forEach(c => {
+    const nom = c.prenom || 'Client anonyme';
+    const articles = (c.items || []).map(i => '<div>' + i.quantite + 'x ' + i.nom + '</div>').join('');
+    const position = (c.latitude && c.longitude)
+      ? '<a class="lien-maps" href="https://www.google.com/maps?q=' + c.latitude + ',' + c.longitude + '" target="_blank">📍 Voir sur la carte</a>'
+      : '—';
+    const paiement = c.moyen_paiement || '—';
+    const date = new Date(c.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const ligneClasse = !c.vue ? ' class="ligne-non-vue"' : '';
+    const badgeNouveau = !c.vue ? '<span class="tag-nouveau">Nouveau</span>' : '';
+
+    html += '<tr' + ligneClasse + '>' +
+      '<td>#' + c.id + badgeNouveau + '</td>' +
+      '<td class="client-row-nom">' + nom + (c.telephone ? '<br><span style="color:#8B93A1;font-weight:400;">' + c.telephone + '</span>' : '') + '</td>' +
+      '<td class="items-liste">' + articles + '</td>' +
+      '<td>' + Math.round(c.total).toLocaleString() + ' F</td>' +
+      '<td>' + paiement + '</td>' +
+      '<td>' + position + '</td>' +
+      '<td>' + rendreSelectStatutCommande(c.id, c.statut) + '</td>' +
+      '<td><button class="btn-livreur" onclick="envoyerAuLivreur(' + c.id + ')" ' + ((c.latitude && c.longitude) ? '' : 'title="Position non partagee par le client"') + '>📤 Livreur</button></td>' +
+      '<td>' + date + '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+
+  await fetch('/api/notifications/' + entrepriseId + '/tout-marquer-vu', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'commandes' }),
+  });
+  chargerNotifications(entrepriseId);
+}
+
+function rendreSelectStatutCommande(commandeId, statutActuel) {
+  let options = '';
+  Object.keys(LABELS_STATUT_COMMANDE).forEach(s => {
+    options += '<option value="' + s + '"' + (s === statutActuel ? ' selected' : '') + '>' + LABELS_STATUT_COMMANDE[s] + '</option>';
+  });
+  return '<select class="statut-select st-' + statutActuel + '" data-commande-id="' + commandeId + '" onchange="changerStatutCommande(' + commandeId + ', this)">' + options + '</select>';
+}
+
+async function changerStatutCommande(commandeId, selectEl) {
+  const nouveauStatut = selectEl.value;
+  selectEl.className = 'statut-select st-' + nouveauStatut;
+  await fetch('/api/commandes/' + commandeId + '/statut', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ statut: nouveauStatut }),
+  });
+}
+
+async function envoyerAuLivreur(commandeId) {
+  const res = await fetch('/api/commandes/' + commandeId + '/lien-livreur');
+  const data = await res.json();
+  if (data.lien_whatsapp) {
+    window.open(data.lien_whatsapp, '_blank');
+  }
+}
+
+/* ===== RÉSERVATIONS ===== */
+
+async function chargerReservations(entrepriseId) {
+  const tbody = document.getElementById('reservations-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" class="client-row-vide">Chargement…</td></tr>';
+
+  const res = await fetch('/api/rendez-vous/' + entrepriseId);
+  const rdvs = await res.json();
+
+  if (!rdvs || rdvs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="client-row-vide">Aucune réservation pour le moment</td></tr>';
+    return;
+  }
+
+  let html = '';
+  rdvs.forEach(r => {
+    const nom = r.prenom || 'Client anonyme';
+    const tel = r.telephone || '—';
+    const date = new Date(r.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const ligneClasse = !r.vue ? ' class="ligne-non-vue"' : '';
+    const badgeNouveau = !r.vue ? '<span class="tag-nouveau">Nouveau</span>' : '';
+
+    html += '<tr' + ligneClasse + '>' +
+      '<td>#' + r.id + badgeNouveau + '</td>' +
+      '<td class="client-row-nom">' + nom + '</td>' +
+      '<td>' + tel + '</td>' +
+      '<td>' + r.libelle + '</td>' +
+      '<td>' + r.jour + '</td>' +
+      '<td>' + r.heure + '</td>' +
+      '<td><span class="statut-select st-' + r.statut + '" style="display:inline-block;">' + (r.statut === 'confirme' ? 'Confirmé' : r.statut) + '</span></td>' +
+      '<td>' + date + '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+
+  await fetch('/api/notifications/' + entrepriseId + '/tout-marquer-vu', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'rendez_vous' }),
+  });
+  chargerNotifications(entrepriseId);
+}
+
+/* ===== PRODUITS / MENU ===== */
+
+function basculerFormAjoutProduit() {
+  document.getElementById('form-ajout-produit').classList.toggle('visible');
+}
+
+async function chargerProduits(entrepriseId) {
+  const tbody = document.getElementById('produits-tbody');
+  tbody.innerHTML = '<tr><td colspan="6" class="client-row-vide">Chargement…</td></tr>';
+
+  const res = await fetch('/api/produits/' + entrepriseId);
+  const produits = await res.json();
+
+  document.getElementById('produits-compteur').textContent =
+    produits.length + ' produit(s) — ' + produits.filter(p => p.disponible).length + ' disponible(s)';
+
+  if (!produits || produits.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="client-row-vide">Aucun produit pour le moment. Ajoutez-en un ci-dessus.</td></tr>';
+    return;
+  }
+
+  let html = '';
+  produits.forEach(p => {
+    const ligneClasse = !p.disponible ? ' class="ligne-indisponible"' : '';
+    html += '<tr' + ligneClasse + ' data-item-id="' + p.id + '">' +
+      '<td><span class="categorie-tag" contenteditable="true" onblur="modifierChampProduit(' + p.id + ', \'categorie\', this.textContent)">' + (p.categorie || 'Autre') + '</span></td>' +
+      '<td><input class="champ-inline" value="' + escapeHtml(p.nom) + '" onchange="modifierChampProduit(' + p.id + ', \'nom\', this.value)"></td>' +
+      '<td><input class="champ-inline" value="' + escapeHtml(p.description || '') + '" placeholder="—" onchange="modifierChampProduit(' + p.id + ', \'description\', this.value)"></td>' +
+      '<td><input class="champ-inline champ-prix" type="number" value="' + p.prix + '" onchange="modifierChampProduit(' + p.id + ', \'prix\', this.value)"> ' + (p.devise || 'FCFA') + '</td>' +
+      '<td><label class="toggle-switch"><input type="checkbox" ' + (p.disponible ? 'checked' : '') + ' onchange="toggleDisponibiliteProduit(' + p.id + ', this.checked)"><span class="toggle-slider"></span></label></td>' +
+      '<td><button class="btn-icone" onclick="supprimerProduit(' + p.id + ')" title="Supprimer">🗑️</button></td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function escapeHtml(texte) {
+  const div = document.createElement('div');
+  div.textContent = texte || '';
+  return div.innerHTML;
+}
+
+async function ajouterProduit() {
+  if (!entrepriseActuelle) return;
+  const nom = document.getElementById('nouveau-produit-nom').value.trim();
+  const categorie = document.getElementById('nouveau-produit-categorie').value.trim() || 'Autre';
+  const prix = document.getElementById('nouveau-produit-prix').value || 0;
+  const devise = document.getElementById('nouveau-produit-devise').value;
+  const description = document.getElementById('nouveau-produit-description').value.trim();
+
+  if (!nom) {
+    alert('Le nom du produit est requis.');
+    return;
+  }
+
+  await fetch('/api/produits/' + entrepriseActuelle.id, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nom, categorie, prix, devise, description }),
+  });
+
+  document.getElementById('nouveau-produit-nom').value = '';
+  document.getElementById('nouveau-produit-categorie').value = '';
+  document.getElementById('nouveau-produit-prix').value = '';
+  document.getElementById('nouveau-produit-description').value = '';
+  document.getElementById('form-ajout-produit').classList.remove('visible');
+
+  chargerProduits(entrepriseActuelle.id);
+}
+
+async function modifierChampProduit(itemId, champ, valeur) {
+  const data = {};
+  data[champ] = champ === 'prix' ? parseFloat(valeur) || 0 : valeur;
+  await fetch('/api/produits/item/' + itemId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+async function toggleDisponibiliteProduit(itemId, disponible) {
+  await fetch('/api/produits/item/' + itemId + '/disponibilite', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disponible }),
+  });
+  if (entrepriseActuelle) chargerProduits(entrepriseActuelle.id);
+}
+
+async function supprimerProduit(itemId) {
+  if (!confirm('Supprimer ce produit du menu ?')) return;
+  await fetch('/api/produits/item/' + itemId, { method: 'DELETE' });
+  if (entrepriseActuelle) chargerProduits(entrepriseActuelle.id);
+}
+
+async function chargerGraphiques(entrepriseId) {
+  const [statsJour, topProduits] = await Promise.all([
+    fetch('/api/stats-graph/' + entrepriseId).then(r => r.json()),
+    fetch('/api/top-produits/' + entrepriseId).then(r => r.json()),
+  ]);
+
+  const labels = statsJour.map(s => {
+    const d = new Date(s.date + 'T00:00:00');
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  });
+
+  const couleurGrille = 'rgba(255,255,255,0.05)';
+  const couleurTexte = '#8B93A1';
+
+  if (chartEvolution) chartEvolution.destroy();
+  chartEvolution = new Chart(document.getElementById('chart-evolution'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Conversations',
+          data: statsJour.map(s => s.conversations),
+          borderColor: '#4ADE80',
+          backgroundColor: 'rgba(74,222,128,0.12)',
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          label: 'Commandes / RDV',
+          data: statsJour.map(s => s.commandes + s.rendez_vous),
+          borderColor: '#B794F6',
+          backgroundColor: 'rgba(183,148,246,0.12)',
+          tension: 0.35,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: couleurTexte } } },
+      scales: {
+        x: { ticks: { color: couleurTexte }, grid: { color: couleurGrille } },
+        y: { ticks: { color: couleurTexte }, grid: { color: couleurGrille }, beginAtZero: true },
+      },
+    },
+  });
+
+  if (chartCA) chartCA.destroy();
+  chartCA = new Chart(document.getElementById('chart-ca'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Chiffre d'affaires (FCFA)",
+        data: statsJour.map(s => s.chiffre_affaires),
+        backgroundColor: '#F6AD55',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: couleurTexte }, grid: { color: couleurGrille } },
+        y: { ticks: { color: couleurTexte }, grid: { color: couleurGrille }, beginAtZero: true },
+      },
+    },
+  });
+
+  if (chartTopProduits) chartTopProduits.destroy();
+  chartTopProduits = new Chart(document.getElementById('chart-top-produits'), {
+    type: 'bar',
+    data: {
+      labels: topProduits.length > 0 ? topProduits.map(p => p.nom) : ['Aucune donnée'],
+      datasets: [{
+        label: 'Quantité commandée',
+        data: topProduits.length > 0 ? topProduits.map(p => p.quantite) : [0],
+        backgroundColor: '#4ADE80',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: couleurTexte }, grid: { color: couleurGrille }, beginAtZero: true },
+        y: { ticks: { color: couleurTexte }, grid: { color: couleurGrille } },
+      },
+    },
+  });
+}
+
+initialiser();
+</script>
+</body>
+</html>
