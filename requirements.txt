@@ -6,4 +6,4 @@ gunicorn
 python-dotenv
 groq
 gunicorn
-eventlet
+requests

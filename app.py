@@ -1,6 +1,7 @@
 import os
 import uuid
 import urllib.parse
+import requests as http_requests
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from dotenv import load_dotenv
@@ -23,6 +24,12 @@ database.init_db()
 if not database.lister_entreprises():
     import seed_demos
     seed_demos.seed()
+
+# ---------- CONFIGURATION WHATSAPP (Meta Cloud API) ----------
+WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
+WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_ENTREPRISE_ID = os.environ.get("WHATSAPP_ENTREPRISE_ID", "")
 
 
 def _room_admin(entreprise_id):
@@ -48,6 +55,31 @@ def _generer_lien_whatsapp_livreur(commande):
 
     texte = "\n".join(lignes)
     return "https://wa.me/?text=" + urllib.parse.quote(texte)
+
+
+def _envoyer_message_whatsapp(numero_destinataire, texte):
+    """Envoie un message texte via l'API WhatsApp Cloud de Meta."""
+    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+        print("[whatsapp] Configuration manquante, message non envoye.")
+        return
+
+    url = f"https://graph.facebook.com/v21.0/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero_destinataire,
+        "type": "text",
+        "text": {"body": texte},
+    }
+    try:
+        r = http_requests.post(url, headers=headers, json=payload, timeout=15)
+        if r.status_code >= 400:
+            print(f"[whatsapp] Erreur envoi ({r.status_code}) : {r.text}")
+    except Exception as e:
+        print(f"[whatsapp] Exception envoi : {e}")
 
 
 @app.route("/")
@@ -282,6 +314,81 @@ def api_notifications_tout_marquer_vu(entreprise_id):
     elif cible == "rendez_vous":
         database.marquer_tous_rdv_vus(entreprise_id)
     return jsonify({"statut": "ok"})
+
+
+# ---------- WEBHOOK WHATSAPP (Meta Cloud API) ----------
+
+@app.route("/webhook", methods=["GET"])
+def whatsapp_verify():
+    """Meta appelle cette route une seule fois pour verifier le webhook."""
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if mode == "subscribe" and token == WHATSAPP_VERIFY_TOKEN:
+        return challenge, 200
+    return "Verification echouee", 403
+
+
+@app.route("/webhook", methods=["POST"])
+def whatsapp_recevoir():
+    """Recoit les messages entrants WhatsApp et renvoie la reponse de l'IA."""
+    data = request.json or {}
+
+    try:
+        entree = data["entry"][0]
+        changement = entree["changes"][0]["value"]
+
+        if "messages" not in changement:
+            # Peut etre un accuse de lecture ou un statut, on ignore
+            return jsonify({"statut": "ignore"}), 200
+
+        message = changement["messages"][0]
+        numero_expediteur = message["from"]  # ex: "221771234567"
+        session_id = numero_expediteur  # on utilise le numero comme identifiant de session
+
+        entreprise_id = WHATSAPP_ENTREPRISE_ID
+        if not entreprise_id:
+            print("[whatsapp] WHATSAPP_ENTREPRISE_ID non configure.")
+            return jsonify({"statut": "erreur_config"}), 200
+
+        type_message = message.get("type")
+
+        if type_message == "text":
+            texte_recu = message["text"]["body"]
+
+        elif type_message == "location":
+            latitude = message["location"]["latitude"]
+            longitude = message["location"]["longitude"]
+            # On simule un message texte pour que l'IA traite la localisation
+            # exactement comme dans le dashboard web (meme logique, meme prompt).
+            texte_recu = f"Localisation partagee : latitude {latitude}, longitude {longitude}"
+
+        else:
+            _envoyer_message_whatsapp(numero_expediteur, "Je ne gere pour l'instant que le texte et la position 🙏")
+            return jsonify({"statut": "ok"}), 200
+
+        resultat = moteur_ia.traiter_message(entreprise_id, session_id, texte_recu)
+        _envoyer_message_whatsapp(numero_expediteur, resultat["reponse"])
+
+        for ev in resultat["evenements"]:
+            if ev["type"] == "commande_creee":
+                commande_id = ev["details"].get("commande_id")
+                commande = database.obtenir_commande(commande_id) if commande_id else None
+                if commande:
+                    socketio.emit(
+                        "nouvelle_commande",
+                        {"commande": commande, "lien_whatsapp": _generer_lien_whatsapp_livreur(commande)},
+                        room=_room_admin(entreprise_id),
+                    )
+            if ev["type"] == "rdv_cree":
+                rdv = database.obtenir_dernier_rdv(entreprise_id, session_id)
+                socketio.emit("nouveau_rdv", {"rdv": rdv}, room=_room_admin(entreprise_id))
+
+    except (KeyError, IndexError) as e:
+        print(f"[whatsapp] Format de payload inattendu : {e}")
+
+    return jsonify({"statut": "ok"}), 200
 
 
 @socketio.on("connect")
