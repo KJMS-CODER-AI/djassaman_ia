@@ -17,8 +17,12 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 database.init_db()
 
-if not os.getenv("GROQ_API_KEY"):
-    print("ATTENTION : GROQ_API_KEY n'est pas definie dans le fichier .env !")
+# Peuple automatiquement la base avec les demos si elle est vide.
+# Utile en production (Render) ou le disque est ephemere et se
+# reinitialise a chaque redemarrage/redeploiement.
+if not database.lister_entreprises():
+    import seed_demos
+    seed_demos.seed()
 
 
 def _room_admin(entreprise_id):
