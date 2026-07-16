@@ -2,35 +2,148 @@ import os
 import json
 import time
 import random
-from groq import Groq, RateLimitError, APITimeoutError, APIConnectionError, InternalServerError
+from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError, InternalServerError, AuthenticationError
 from dotenv import load_dotenv
 
 import database
 
 load_dotenv()
 
-client_groq = Groq(api_key=os.getenv("GROQ_API_KEY"), timeout=45.0, max_retries=0)
-MODELE = "openai/gpt-oss-120b"
-
 PANIERS = {}
 
 MOYENS_PAIEMENT = ["Orange Money", "MTN Money", "Wave", "Paiement a la livraison"]
 
 # ---------------------------------------------------------------------------
-# THROTTLE : espace les appels Groq pour eviter de taper le rate limit
-# (plan gratuit = 8000 tokens/minute). On attend un delai minimum entre
-# chaque appel plutot que d'attendre l'erreur 429 pour reagir.
+# MULTI-PROVIDERS : Groq, Gemini et Mistral exposent tous une API compatible
+# OpenAI, donc on utilise un seul client generique par fournisseur, juste en
+# changeant l'URL de base et la cle. Chaque conversation (session) est
+# assignee a UN SEUL fournisseur (coherence du ton et des appels d'outils),
+# reparti a tour de role entre les 3. Si le fournisseur assigne echoue,
+# bascule automatique sur un autre pour cette conversation uniquement.
 # ---------------------------------------------------------------------------
-_dernier_appel = {"t": 0.0}
-_DELAI_MIN_ENTRE_APPELS = 3.5  # secondes, empirique pour rester sous 8000 TPM
+
+PROVIDERS_CONFIG = {
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key_env": "GROQ_API_KEY",
+        "model": "openai/gpt-oss-120b",
+        "delai_min": 3.5,
+    },
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "api_key_env": "GEMINI_API_KEY",
+        "model": "gemini-2.0-flash",
+        "delai_min": 2.0,
+    },
+    "mistral": {
+        "base_url": "https://api.mistral.ai/v1",
+        "api_key_env": "MISTRAL_API_KEY",
+        "model": "mistral-small-latest",
+        "delai_min": 2.0,
+    },
+}
+
+_ORDRE_PROVIDERS = ["groq", "gemini", "mistral"]
+
+_clients = {}
 
 
-def _throttle():
-    """Espace les appels Groq pour eviter de taper le rate limit du plan gratuit."""
-    ecoule = time.time() - _dernier_appel["t"]
-    if ecoule < _DELAI_MIN_ENTRE_APPELS:
-        time.sleep(_DELAI_MIN_ENTRE_APPELS - ecoule)
-    _dernier_appel["t"] = time.time()
+def _get_client(provider):
+    """Cree (une seule fois) et retourne le client OpenAI configure pour ce fournisseur."""
+    if provider not in _clients:
+        cfg = PROVIDERS_CONFIG[provider]
+        api_key = os.getenv(cfg["api_key_env"], "")
+        _clients[provider] = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=45.0, max_retries=0)
+    return _clients[provider]
+
+
+# Assignation des sessions aux providers, a tour de role (round-robin)
+SESSIONS_PROVIDER = {}
+_compteur_assignation = {"n": 0}
+
+
+def _obtenir_provider_session(entreprise_id, session_id):
+    cle = (entreprise_id, session_id)
+    if cle not in SESSIONS_PROVIDER:
+        provider = _ORDRE_PROVIDERS[_compteur_assignation["n"] % len(_ORDRE_PROVIDERS)]
+        _compteur_assignation["n"] += 1
+        SESSIONS_PROVIDER[cle] = provider
+        print(f"[moteur_ia] Nouvelle session -> provider assigne : {provider}")
+    return SESSIONS_PROVIDER[cle]
+
+
+def _definir_provider_session(entreprise_id, session_id, provider):
+    SESSIONS_PROVIDER[(entreprise_id, session_id)] = provider
+
+
+# Throttle separe par provider (chacun a son propre rate limit)
+_dernier_appel = {p: 0.0 for p in _ORDRE_PROVIDERS}
+
+
+def _throttle(provider):
+    delai_min = PROVIDERS_CONFIG[provider]["delai_min"]
+    ecoule = time.time() - _dernier_appel[provider]
+    if ecoule < delai_min:
+        time.sleep(delai_min - ecoule)
+    _dernier_appel[provider] = time.time()
+
+
+def _appel_provider(provider, messages, tools, max_tentatives=2):
+    """Appelle un fournisseur precis, avec retry rapide (2 tentatives) sur erreurs transitoires."""
+    client = _get_client(provider)
+    model = PROVIDERS_CONFIG[provider]["model"]
+    derniere_erreur = None
+
+    for tentative in range(1, max_tentatives + 1):
+        try:
+            _throttle(provider)
+            debut = time.time()
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=400,
+            )
+            print(f"[moteur_ia] {provider} OK en {time.time() - debut:.1f}s (tentative {tentative})")
+            return response
+        except (RateLimitError, APITimeoutError, APIConnectionError, InternalServerError) as e:
+            derniere_erreur = e
+            attente = (2 ** tentative) + random.uniform(0, 1)
+            print(f"[moteur_ia] {provider} erreur transitoire ({type(e).__name__}) tentative {tentative}/{max_tentatives}, retry dans {attente:.1f}s")
+            if tentative < max_tentatives:
+                time.sleep(attente)
+        except AuthenticationError as e:
+            print(f"[moteur_ia] {provider} cle API invalide ou manquante : {e}")
+            raise
+        except Exception as e:
+            print(f"[moteur_ia] {provider} erreur NON transitoire : {type(e).__name__} - {e}")
+            raise
+
+    raise derniere_erreur
+
+
+def _appel_ia(entreprise_id, session_id, messages, tools):
+    """Point d'entree principal : essaie le provider assigne a la session,
+    bascule automatiquement sur les autres en cas d'echec."""
+    provider_principal = _obtenir_provider_session(entreprise_id, session_id)
+    ordre_essai = [provider_principal] + [p for p in _ORDRE_PROVIDERS if p != provider_principal]
+
+    derniere_erreur = None
+    for provider in ordre_essai:
+        try:
+            response = _appel_provider(provider, messages, tools, max_tentatives=2)
+            if provider != provider_principal:
+                print(f"[moteur_ia] Bascule definitive vers {provider} pour cette session")
+                _definir_provider_session(entreprise_id, session_id, provider)
+            return response
+        except Exception as e:
+            derniere_erreur = e
+            print(f"[moteur_ia] {provider} indisponible, tentative du provider suivant...")
+            continue
+
+    print(f"[moteur_ia] TOUS les providers ont echoue : {derniere_erreur}")
+    raise derniere_erreur
 
 
 def _cle_panier(entreprise_id, session_id):
@@ -43,34 +156,6 @@ def obtenir_panier(entreprise_id, session_id):
 
 def vider_panier(entreprise_id, session_id):
     PANIERS.pop(_cle_panier(entreprise_id, session_id), None)
-
-
-def _appel_groq(messages, tools, max_tentatives=3):
-    """Appelle Groq avec retry exponentiel sur les erreurs transitoires (rate limit, timeout, surcharge)."""
-    derniere_erreur = None
-    for tentative in range(1, max_tentatives + 1):
-        try:
-            _throttle()
-            debut = time.time()
-            response = client_groq.chat.completions.create(
-                model=MODELE,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                max_tokens=400,
-            )
-            print(f"[moteur_ia] OK en {time.time() - debut:.1f}s (tentative {tentative})")
-            return response
-        except (RateLimitError, APITimeoutError, APIConnectionError, InternalServerError) as e:
-            derniere_erreur = e
-            attente = (2 ** tentative) + random.uniform(0, 1)
-            print(f"[moteur_ia] Erreur transitoire ({type(e).__name__}) tentative {tentative}/{max_tentatives}, retry dans {attente:.1f}s")
-            if tentative < max_tentatives:
-                time.sleep(attente)
-        except Exception as e:
-            print(f"[moteur_ia] Erreur NON transitoire : {type(e).__name__} - {e}")
-            raise
-    raise derniere_erreur
 
 
 def construire_prompt_systeme(entreprise, catalogue, creneaux, faq, client, dernier_rdv, derniere_commande):
@@ -464,8 +549,6 @@ def traiter_message(entreprise_id, session_id, message_utilisateur, on_panier_mo
 
     prompt_systeme = construire_prompt_systeme(entreprise, catalogue, creneaux, faq, client, dernier_rdv, derniere_commande)
 
-    # Historique reduit a 6 messages (au lieu de 16) pour limiter la
-    # consommation de tokens a chaque appel et rester sous le rate limit.
     historique = database.obtenir_historique(entreprise_id, session_id, limite=6)
 
     messages = [{"role": "system", "content": prompt_systeme}]
@@ -479,7 +562,7 @@ def traiter_message(entreprise_id, session_id, message_utilisateur, on_panier_mo
     evenements = []
 
     try:
-        response = _appel_groq(messages, tools)
+        response = _appel_ia(entreprise_id, session_id, messages, tools)
         message_ia = response.choices[0].message
 
         boucles = 0
@@ -523,7 +606,7 @@ def traiter_message(entreprise_id, session_id, message_utilisateur, on_panier_mo
                     "content": json.dumps(resultat),
                 })
 
-            response = _appel_groq(messages, tools)
+            response = _appel_ia(entreprise_id, session_id, messages, tools)
             message_ia = response.choices[0].message
 
         texte_final = message_ia.content or "Desole, je n'ai pas pu traiter votre demande."
@@ -534,7 +617,7 @@ def traiter_message(entreprise_id, session_id, message_utilisateur, on_panier_mo
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"[moteur_ia] ERREUR FINALE : {type(e).__name__} - {e}")
+        print(f"[moteur_ia] ERREUR FINALE (tous providers epuises) : {type(e).__name__} - {e}")
         return {
             "reponse": "Une petite lenteur de notre cote, reessayez dans quelques secondes 🙏",
             "evenements": [],
