@@ -2,6 +2,7 @@ import os
 import json
 import time
 import random
+import threading
 from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError, InternalServerError, AuthenticationError
 from dotenv import load_dotenv
 
@@ -12,6 +13,27 @@ load_dotenv()
 PANIERS = {}
 
 MOYENS_PAIEMENT = ["Orange Money", "MTN Money", "Wave", "Paiement a la livraison"]
+
+# ---------------------------------------------------------------------------
+# VERROUS PAR SESSION : si un meme client envoie plusieurs messages tres
+# rapprochés (impatience, double-clic, etc.), on les traite UN PAR UN, dans
+# l'ordre, plutot qu'en parallele. Ca evite deux problemes :
+# 1) Le panier ou l'historique corrompu par deux threads qui le modifient
+#    en meme temps.
+# 2) Tous les threads du serveur satures par les memes messages qui
+#    tournent en parallele inutilement, bloquant les AUTRES clients.
+# Des clients DIFFERENTS continuent de tourner en parallele normalement.
+# ---------------------------------------------------------------------------
+_verrous_session = {}
+_verrous_session_lock = threading.Lock()
+
+
+def _obtenir_verrou_session(entreprise_id, session_id):
+    cle = (entreprise_id, session_id)
+    with _verrous_session_lock:
+        if cle not in _verrous_session:
+            _verrous_session[cle] = threading.Lock()
+        return _verrous_session[cle]
 
 # ---------------------------------------------------------------------------
 # MULTI-PROVIDERS : Groq, Gemini et Mistral exposent tous une API compatible
@@ -45,6 +67,12 @@ PROVIDERS_CONFIG = {
 
 _ORDRE_PROVIDERS = ["groq", "gemini", "mistral"]
 
+# Assignation PRIMAIRE : uniquement entre les 2 fournisseurs les plus fiables
+# pour le function calling. Mistral (modele "small") reste disponible mais
+# UNIQUEMENT en secours si les deux autres echouent, jamais en 1er choix,
+# car il a tendance a "raconter" une action sans reellement appeler l'outil.
+_PROVIDERS_ASSIGNATION = ["groq", "gemini"]
+
 _clients = {}
 
 
@@ -53,7 +81,7 @@ def _get_client(provider):
     if provider not in _clients:
         cfg = PROVIDERS_CONFIG[provider]
         api_key = os.getenv(cfg["api_key_env"], "")
-        _clients[provider] = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=45.0, max_retries=0)
+        _clients[provider] = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=20.0, max_retries=0)
     return _clients[provider]
 
 
@@ -65,7 +93,7 @@ _compteur_assignation = {"n": 0}
 def _obtenir_provider_session(entreprise_id, session_id):
     cle = (entreprise_id, session_id)
     if cle not in SESSIONS_PROVIDER:
-        provider = _ORDRE_PROVIDERS[_compteur_assignation["n"] % len(_ORDRE_PROVIDERS)]
+        provider = _PROVIDERS_ASSIGNATION[_compteur_assignation["n"] % len(_PROVIDERS_ASSIGNATION)]
         _compteur_assignation["n"] += 1
         SESSIONS_PROVIDER[cle] = provider
         print(f"[moteur_ia] Nouvelle session -> provider assigne : {provider}")
@@ -180,6 +208,7 @@ REGLES GENERALES :
 - Si le client demande quelque chose hors du champ de l'entreprise, reste poli et recentre la conversation.
 - IMPORTANT : Ne rappelle JAMAIS un outil de reservation, de commande ou de panier pour une action DEJA confirmee (voir "ETAT ACTUEL DE LA CONVERSATION" ci-dessous si present). Si le client donne juste son prenom, son telephone ou son anniversaire APRES une confirmation, utilise UNIQUEMENT enregistrer_client_info, rien d'autre.
 - Si le message du client commence par ou contient "Localisation partagee" suivi de coordonnees, remercie-le brievement et utilise l'outil enregistrer_localisation avec les coordonnees exactes fournies dans le message. Precise que cela aide a mieux le situer (livraison, itineraire, etc.).
+- CRITIQUE : ne dis JAMAIS qu'un article a ete ajoute/retire du panier, ou qu'une commande/rendez-vous est confirme, sans avoir REELLEMENT appele l'outil correspondant DANS CE MEME tour de reponse. Il est INTERDIT de decrire une action comme faite dans le texte si l'outil n'a pas ete appele en parallele. En cas de doute, appelle l'outil.
 """
 
     if client.get("prenom"):
@@ -536,6 +565,18 @@ OUTILS_QUI_TOUCHENT_LE_CLIENT = {"enregistrer_client_info", "enregistrer_localis
 
 
 def traiter_message(entreprise_id, session_id, message_utilisateur, on_panier_modifie=None, on_client_modifie=None):
+    """Point d'entree public : serialise les messages d'une meme session via
+    un verrou, pour eviter les collisions si le client envoie plusieurs
+    messages tres rapprochés. D'autres sessions continuent en parallele."""
+    verrou = _obtenir_verrou_session(entreprise_id, session_id)
+    with verrou:
+        return _traiter_message_interne(
+            entreprise_id, session_id, message_utilisateur,
+            on_panier_modifie=on_panier_modifie, on_client_modifie=on_client_modifie,
+        )
+
+
+def _traiter_message_interne(entreprise_id, session_id, message_utilisateur, on_panier_modifie=None, on_client_modifie=None):
     entreprise = database.obtenir_entreprise(entreprise_id)
     if not entreprise:
         return {"reponse": "Configuration introuvable.", "evenements": []}
